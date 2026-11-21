@@ -1,20 +1,20 @@
-# CBSE-COMPETATITIVE-SCHOOL
-# 🏫 CBSE Competitive School Website
+# CBSE Competitive School — Website Project
 
-A modern, responsive, and beautifully styled web application built for **The C.B.S.E. Competitive School**. This project showcases the institution's academic excellence, leadership, expert faculty, and prestigious student milestones.
+This repository currently contains a project overview only. The website source code, stylesheets, JavaScript, and image assets are not present on the `main` branch, so this repository does not currently provide a runnable website.
 
-## 🚀 Key Features
-* **Interactive Navigation & Hero Section:** Designed with a clean layout and background imagery to welcome visitors.
-* **Leadership & Faculty Profiles:** Dedicated cards featuring the Chairperson, Principal (MD Sir), and subject matter experts.
-* **Wall of Fame & Success Stories:** A specialized gallery highlighting state olympiad rank holders and district toppers.
-* **Modern CSS & Animations:** Includes customized rounded borders, centered image overlays, and dynamic gradient hover effects.
+## Project goal
 
-## 🛠️ Tech Stack
-* **HTML5** for semantic page structure
-* **CSS3** for styling, Flexbox layouts, and custom gradients
-* **JavaScript** for responsive menu toggles
+The planned website is for CBSE Competitive School in Mohania, Kaimur, Bihar. The intended site may present school information, faculty, achievements, and photos.
 
-## 📂 Project Structure
-* `index22.html` – Main webpage structure and markup
-* `style.css` – Custom stylesheet handling themes, positioning, and hover animations
-* `school/` – Asset directory containing school photos, faculty headshots, and achievement posters
+## Planned implementation
+
+The earlier project outline proposed HTML, CSS, and JavaScript, with files such as `index22.html`, `style.css`, and a `school/` asset directory. These files have not been verified in this repository and are not currently available on `main`.
+
+## Current status
+
+- **Repository contents:** this README only
+- **Website source and assets:** not included on `main`
+- **Build or run instructions:** unavailable until the source code is added
+- **Live website:** no public deployment is verified
+
+This README describes the project goal and repository status; it does not claim that a complete website is included or deployed.
