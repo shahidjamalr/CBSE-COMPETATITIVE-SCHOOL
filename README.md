@@ -1,20 +1,11 @@
-# CBSE Competitive School — Website Project
+# CBSE Competitive School — Projects
 
-This repository currently contains a project overview only. The website source code, stylesheets, JavaScript, and image assets are not present on the `main` branch, so this repository does not currently provide a runnable website.
+This repository contains a project overview for the school website and a separate local face attendance prototype.
 
-## Project goal
+## Attendance system
 
-The planned website is for CBSE Competitive School in Mohania, Kaimur, Bihar. The intended site may present school information, faculty, achievements, and photos.
+The [attendance-system](attendance-system/) folder contains the Python source, staff interface, setup instructions, and logic tests for a supervised, local attendance workflow. It stores face embeddings and attendance in a local database. No student records, face data, passwords, or model files are committed here. It needs a webcam, OpenCV models, dependency installation, and on-site testing before school use.
 
-## Planned implementation
+## Website project
 
-The earlier project outline proposed HTML, CSS, and JavaScript, with files such as `index22.html`, `style.css`, and a `school/` asset directory. These files have not been verified in this repository and are not currently available on `main`.
-
-## Current status
-
-- **Repository contents:** this README only
-- **Website source and assets:** not included on `main`
-- **Build or run instructions:** unavailable until the source code is added
-- **Live website:** no public deployment is verified
-
-This README describes the project goal and repository status; it does not claim that a complete website is included or deployed.
+The school website source code, stylesheets, JavaScript, and image assets are not present on the `main` branch of this repository. This repository does not provide a runnable website. Its intended subject is CBSE Competitive School in Mohania, Kaimur, Bihar, including school information, faculty, achievements, and photos. Earlier plans mentioned `index22.html`, `style.css`, and `school/` assets, but those files are not on `main`.
