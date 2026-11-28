@@ -12,7 +12,7 @@ import sqlite3
 from flask import Flask, Response, abort, jsonify, redirect, render_template_string, request, session, url_for
 import numpy as np
 
-from attendance import DEFAULT_DB, THRESHOLD, Vision, connect, correct_attendance, enroll, identify, mark, students
+from attendance import DEFAULT_DB, THRESHOLD, Vision, combine_samples, connect, correct_attendance, enroll, identify, mark, students
 
 
 PAGE = """<!doctype html><html lang="en"><head><meta charset="utf-8">
@@ -48,13 +48,13 @@ HOME = """<section class="card"><h2>Today's attendance</h2>
 <p class="small">Face matching can make mistakes and a photo may fool the camera. Keep a manual option.</p></section>"""
 
 ENROLL = """<section class="card"><h2>Enroll a student</h2>
-<p>Only one student should be in the frame. Use the student's official school ID.</p>
+<p>Only one student should be in the frame. We capture three samples with small angle changes. Use the student's official school ID.</p>
 <form id="enroll"><input id="sid" required maxlength="60" placeholder="Student ID">
 <input id="name" required maxlength="120" placeholder="Full name">
 <input id="class" required maxlength="60" placeholder="Class / section (e.g. 10-A)">
 <label><input type="checkbox" id="consent" required> Student/guardian consent is recorded</label><br>
 <button type="button" onclick="startCamera()">Start camera</button>
-<button type="submit">Capture and enroll</button></form>
+<button type="submit">Capture 3 samples and enroll</button></form>
 <video id="video" autoplay playsinline muted></video><p id="result" role="status"></p></section>
 <section class="card scroll"><h2>Enrolled students</h2><table><tr><th>ID</th><th>Name</th><th>Class</th><th>Action</th></tr>
 {% for sid, name, cls, _ in roster %}<tr><td>{{ sid }}</td><td>{{ name }}</td><td>{{ cls }}</td>
@@ -110,7 +110,9 @@ async function scan(){if(!stream||window.busy)return;window.busy=true;
  }catch(e){result.textContent=e.message;}finally{window.busy=false;}}
 const form=document.querySelector('#enroll');if(form) form.addEventListener('submit',async e=>{e.preventDefault();
  if(!document.querySelector('#consent').checked)return;
- try{let d=await postFrame('/api/enroll',{image:snapshot(),student_id:document.querySelector('#sid').value,
+ try{let images=[];for(let i=0;i<3;i++){images.push(snapshot());result.textContent='Captured '+(i+1)+'/3';
+ if(i<2)await new Promise(resolve=>setTimeout(resolve,650));}
+ let d=await postFrame('/api/enroll',{images,student_id:document.querySelector('#sid').value,
  name:document.querySelector('#name').value,class_name:document.querySelector('#class').value,
  consent:document.querySelector('#consent').checked});
  result.textContent=d.message;stopCamera();setTimeout(()=>location.reload(),1200);
@@ -187,6 +189,26 @@ def create_app(db_path=DEFAULT_DB, vision_factory=Vision):
             return payload, frame
         except (ValueError, base64.binascii.Error):
             abort(400)
+
+    def decode_samples():
+        payload = request.get_json(silent=True) or {}
+        encoded = payload.get("images")
+        if not isinstance(encoded, list) or len(encoded) != 3:
+            abort(400)
+        frames = []
+        cv = get_vision().cv
+        for image in encoded:
+            if not isinstance(image, str) or not image.startswith("data:image/jpeg;base64,"):
+                abort(400)
+            try:
+                raw = base64.b64decode(image.split(",", 1)[1], validate=True)
+            except (ValueError, base64.binascii.Error):
+                abort(400)
+            frame = cv.imdecode(np.frombuffer(raw, dtype=np.uint8), cv.IMREAD_COLOR)
+            if frame is None:
+                abort(400)
+            frames.append(frame)
+        return payload, frames
 
     @app.route("/login", methods=["GET", "POST"])
     def login():
@@ -280,16 +302,19 @@ def create_app(db_path=DEFAULT_DB, vision_factory=Vision):
     @staff
     def api_enroll():
         check_csrf()
-        payload, frame = decode_image()
+        payload, frames = decode_samples()
         if payload.get("consent") is not True:
             return jsonify(error="Record consent before enrolling"), 400
-        faces = get_vision().faces(frame)
-        if len(faces) != 1:
-            return jsonify(error="Exactly one face must be visible"), 400
         try:
+            features = []
+            for frame in frames:
+                faces = get_vision().faces(frame)
+                if len(faces) != 1:
+                    return jsonify(error="Exactly one face must be visible in each sample"), 400
+                features.append(get_vision().feature(frame, faces[0]))
             with connect(db_path) as db:
                 enroll(db, str(payload.get("student_id", "")), str(payload.get("name", "")),
-                       str(payload.get("class_name", "")), get_vision().feature(frame, faces[0]))
+                       str(payload.get("class_name", "")), combine_samples(features))
         except sqlite3.IntegrityError:
             return jsonify(error="Student ID already exists"), 409
         except ValueError as exc:
@@ -302,7 +327,11 @@ def create_app(db_path=DEFAULT_DB, vision_factory=Vision):
         check_csrf()
         _, frame = decode_image()
         key = session["key"]
-        previous = counters.setdefault(key, {})
+        today = date.today().isoformat()
+        state = counters.setdefault(key, {"day": today, "counts": {}})
+        if state["day"] != today:
+            state = counters[key] = {"day": today, "counts": {}}
+        previous = state["counts"]
         found = set()
         matches = []
         with connect(db_path) as db:
@@ -320,7 +349,7 @@ def create_app(db_path=DEFAULT_DB, vision_factory=Vision):
                 if previous[sid] >= 3:
                     status = "marked present" if mark(db, sid, score) else "already present"
                 matches.append({"name": name, "status": status})
-        counters[key] = {sid: count for sid, count in previous.items() if sid in found}
+        state["counts"] = {sid: count for sid, count in previous.items() if sid in found}
         return jsonify(matches=matches)
 
     return app
