@@ -1,0 +1,6 @@
+data/
+models/*.onnx
+__pycache__/
+.pycache/
+.venv/
+*.csv
