@@ -3,6 +3,7 @@
 import argparse
 import csv
 from datetime import datetime
+import os
 import sqlite3
 from pathlib import Path
 
@@ -21,6 +22,7 @@ def connect(path):
     path.parent.mkdir(parents=True, exist_ok=True)
     db = sqlite3.connect(path)
     db.execute("PRAGMA foreign_keys = ON")
+    db.execute("PRAGMA busy_timeout = 5000")
     db.executescript("""
         CREATE TABLE IF NOT EXISTS students (
             student_id TEXT PRIMARY KEY,
@@ -60,12 +62,45 @@ def enroll(db, student_id, name, class_name, feature):
     if not all(x.strip() for x in (student_id, name, class_name)):
         raise ValueError("ID, name and class are required")
     embedding = normalize(feature)
+    for existing_id, _, _, existing in students(db):
+        if existing.shape == embedding.shape and float(np.dot(embedding, existing)) >= 0.70:
+            raise ValueError(f"Face looks like already enrolled student {existing_id}; review before continuing")
     with db:
         db.execute(
             "INSERT INTO students VALUES (?, ?, ?, ?, ?)",
             (student_id.strip(), name.strip(), class_name.strip(),
              embedding.tobytes(), datetime.now().astimezone().isoformat(timespec="seconds")),
         )
+
+
+def combine_samples(features, minimum_similarity=0.55):
+    """Reject inconsistent captures and average three consented face samples."""
+    if len(features) != 3:
+        raise ValueError("Capture three face samples")
+    samples = [normalize(feature) for feature in features]
+    if any(sample.shape != samples[0].shape for sample in samples):
+        raise ValueError("Face samples have incompatible dimensions")
+    if any(float(np.dot(samples[i], samples[j])) < minimum_similarity
+           for i in range(3) for j in range(i + 1, 3)):
+        raise ValueError("Face samples differ too much; recapture the same student in good light")
+    return normalize(np.mean(samples, axis=0))
+
+
+def backup_database(db, destination):
+    """Make a consistent, non-overwriting copy while the database is open."""
+    destination = Path(destination)
+    destination.parent.mkdir(parents=True, exist_ok=True)
+    fd = os.open(destination, os.O_CREAT | os.O_EXCL | os.O_WRONLY, 0o600)
+    os.close(fd)
+    try:
+        with sqlite3.connect(destination) as target:
+            db.backup(target)
+            if target.execute("PRAGMA integrity_check").fetchone()[0] != "ok":
+                raise RuntimeError("Backup integrity check failed")
+        return destination
+    except Exception:
+        destination.unlink(missing_ok=True)
+        raise
 
 
 def students(db):
@@ -152,7 +187,8 @@ def open_camera(cv, index):
 def enroll_camera(vision, index):
     cv = vision.cv
     camera = open_camera(cv, index)
-    print("Look at the camera. Press SPACE to capture one face; ESC to cancel.")
+    print("Look at the camera. Press SPACE three times with small angle changes; ESC to cancel.")
+    samples = []
     try:
         while True:
             ok, frame = camera.read()
@@ -171,7 +207,10 @@ def enroll_camera(vision, index):
                 if len(faces) != 1:
                     print("Exactly one face must be visible; try again.")
                     continue
-                return vision.feature(frame, faces[0])
+                samples.append(vision.feature(frame, faces[0]))
+                print(f"Captured {len(samples)}/3")
+                if len(samples) == 3:
+                    return combine_samples(samples)
     finally:
         camera.release()
         cv.destroyAllWindows()
@@ -222,7 +261,7 @@ def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--db", default=str(DEFAULT_DB), help="Path to local SQLite database")
     sub = parser.add_subparsers(dest="command", required=True)
-    e = sub.add_parser("enroll", help="Capture one consenting student's face")
+    e = sub.add_parser("enroll", help="Capture three samples of one consenting student's face")
     e.add_argument("student_id")
     e.add_argument("name")
     e.add_argument("class_name")
@@ -236,6 +275,8 @@ def main():
     report.add_argument("--csv", type=Path, help="Export to CSV")
     delete = sub.add_parser("delete", help="Delete a student's embedding and attendance")
     delete.add_argument("student_id")
+    backup = sub.add_parser("backup", help="Make a verified database backup")
+    backup.add_argument("--output", type=Path, help="New backup filename; must not exist")
     args = parser.parse_args()
     try:
         with connect(args.db) as db:
@@ -277,7 +318,11 @@ def main():
                 with db:
                     result = db.execute("DELETE FROM students WHERE student_id = ?", (args.student_id,))
                 print("Deleted student and attendance" if result.rowcount else "Student not found")
-    except (RuntimeError, ValueError, sqlite3.Error) as exc:
+            elif args.command == "backup":
+                name = datetime.now().astimezone().strftime("attendance-%Y%m%d-%H%M%S.db")
+                destination = args.output or (Path(args.db).parent / "backups" / name)
+                print(f"Backup saved: {backup_database(db, destination)}")
+    except (RuntimeError, ValueError, OSError, sqlite3.Error) as exc:
         parser.exit(1, f"Error: {exc}\n")
 
 
