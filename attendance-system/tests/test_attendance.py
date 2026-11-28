@@ -6,7 +6,7 @@ from pathlib import Path
 
 import numpy as np
 
-from attendance import connect, correct_attendance, enroll, identify, mark, students
+from attendance import backup_database, combine_samples, connect, correct_attendance, enroll, identify, mark, students
 
 
 class AttendanceTests(unittest.TestCase):
@@ -50,6 +50,24 @@ class AttendanceTests(unittest.TestCase):
         correct_attendance(self.db, "S01", "2026-11-28", False, "Entered in error")
         self.assertEqual(self.db.execute("SELECT COUNT(*) FROM attendance").fetchone()[0], 0)
         self.assertEqual(self.db.execute("SELECT COUNT(*) FROM audit").fetchone()[0], 2)
+
+    def test_three_samples_and_duplicate_identity(self):
+        feature = combine_samples([[1, 0, 0], [0.95, 0.1, 0], [0.9, -0.1, 0]])
+        enroll(self.db, "S01", "A", "10-A", feature)
+        with self.assertRaisesRegex(ValueError, "already enrolled"):
+            enroll(self.db, "S02", "A again", "10-A", [1, 0, 0])
+        with self.assertRaisesRegex(ValueError, "differ too much"):
+            combine_samples([[1, 0], [0, 1], [1, 0]])
+
+    def test_backup_is_consistent_and_does_not_overwrite(self):
+        enroll(self.db, "S01", "A", "10-A", [1, 0])
+        backup = Path(self.temp.name) / "backups" / "copy.db"
+        backup_database(self.db, backup)
+        with sqlite3.connect(backup) as copy:
+            self.assertEqual(copy.execute("SELECT name FROM students").fetchone()[0], "A")
+            self.assertEqual(copy.execute("PRAGMA integrity_check").fetchone()[0], "ok")
+        with self.assertRaises(FileExistsError):
+            backup_database(self.db, backup)
 
 
 if __name__ == "__main__":
